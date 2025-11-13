@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Notion Calendar Widget (Responsive)</title>
+  <style>
+    :root{
+      --bg:#0f1226;
+      --fg:#e6e8ef;
+      --muted:#a5abc0;
+      --accent:#5b8cff;
+      --radius:12px;
+      --shadow:0 6px 24px rgba(0,0,0,.2);
+      --gutter:.75rem;
+      --cell-pad:.5rem;
+    }
+    html,body{
+      height:100%;
+      margin:0;
+      background:transparent;
+    }
+    body{
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      color:var(--fg);
+      line-height:1.25;
+    }
+    .widget{
+      box-sizing:border-box;
+      width:100%;
+      height:100%;
+      display:flex;
+      align-items:stretch;
+      justify-content:center;
+      padding:clamp(.5rem,2vw,1rem);
+    }
+    .calendar{
+      background:var(--bg);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      display:flex;
+      flex-direction:column;
+      width:100%;
+      height:100%;
+      min-height:320px;
+    }
+    .header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:.5rem;
+      padding:clamp(.5rem,2vw,1rem);
+      border-bottom:1px solid rgba(255,255,255,.08);
+    }
+    .title{
+      font-weight:600;
+      font-size:clamp(1rem,2.5vw,1.25rem);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .controls{
+      display:flex;
+      align-items:center;
+      gap:.375rem;
+    }
+    button{
+      background:transparent;
+      border:1px solid rgba(255,255,255,.18);
+      color:var(--fg);
+      padding:.35rem .6rem;
+      border-radius:8px;
+      cursor:pointer;
+      font-size:clamp(.85rem,1.8vw,.95rem);
+    }
+    button:hover{background:rgba(255,255,255,.06)}
+    .weekdays, .grid{
+      display:grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap:var(--gutter);
+      padding:var(--gutter);
+    }
+    .weekdays{
+      padding-bottom:.25rem;
+      color:var(--muted);
+      font-size:clamp(.7rem,1.6vw,.85rem);
+      user-select:none;
+    }
+    .weekday{ text-align:center; }
+    .grid{
+      grid-auto-rows: 1fr;
+      flex:1 1 auto;
+      min-height:0;
+    }
+    .cell{
+      position:relative;
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:10px;
+      padding:var(--cell-pad);
+      display:flex;
+      flex-direction:column;
+      min-width:0;
+      overflow:hidden;
+      background:rgba(255,255,255,.02);
+    }
+    .date{
+      font-weight:600;
+      font-size:clamp(.75rem,1.8vw,.95rem);
+      color:var(--fg);
+      opacity:.9;
+    }
+    .out{ opacity:.35; }
+
+    /* Updated "today" styles to match the requested spec */
+    .today{
+      background:#F7F7F7;
+      outline:none;
+    }
+    .today .date{
+      color:#7580D9;
+    }
+
+    .events{
+      margin-top:.25rem;
+      display:flex;
+      flex-direction:column;
+      gap:.25rem;
+      overflow:auto;
+    }
+    .event{
+      background:rgba(91,140,255,.18);
+      color:var(--fg);
+      padding:.15rem .35rem;
+      border-radius:6px;
+      font-size:clamp(.65rem,1.4vw,.8rem);
+      white-space:nowrap;
+      text-overflow:ellipsis;
+      overflow:hidden;
+    }
+    @media (max-width:640px){
+      :root{ --gutter:.5rem; --cell-pad:.35rem }
+      .weekdays{ display:none }
+    }
+  </style>
+</head>
+<body>
+  <div class="widget">
+    <div class="calendar" id="cal">
+      <div class="header">
+        <div class="title" id="title"></div>
+        <div class="controls">
+          <button id="prev" aria-label="Previous month">◀</button>
+          <button id="today" aria-label="Go to today">Today</button>
+          <button id="next" aria-label="Next month">▶</button>
+        </div>
+      </div>
+      <div class="weekdays" id="wd"></div>
+      <div class="grid" id="grid" role="grid" aria-readonly="true"></div>
+    </div>
+  </div>
+  <script>
+    const state = { view: new Date() };
+    const wdNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const wd = document.getElementById('wd');
+    wdNames.forEach(d=>{
+      const s=document.createElement('div');
+      s.className='weekday';
+      s.textContent=d;
+      wd.appendChild(s);
+    });
+
+    function startOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+    function endOfMonth(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0); }
+    function startOfGrid(d){
+      const s=startOfMonth(d);
+      const day=s.getDay();
+      const g=new Date(s);
+      g.setDate(s.getDate()-day);
+      return g;
+    }
+    function sameDate(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+
+    function render(){
+      const grid=document.getElementById('grid');
+      grid.innerHTML='';
+      const view=state.view;
+      const first=startOfGrid(view);
+      const last=endOfMonth(view);
+      const title=document.getElementById('title');
+      title.textContent = view.toLocaleString(navigator.language || 'en-US', { month:'long', year:'numeric' });
+
+      const today=new Date();
+      for(let i=0;i<42;i++){
+        const d=new Date(first);
+        d.setDate(first.getDate()+i);
+        const cell=document.createElement('div');
+        cell.className='cell';
+        const inMonth = d.getMonth()===view.getMonth();
+        if(!inMonth) cell.classList.add('out');
+        if(sameDate(d,today)) cell.classList.add('today');
+
+        const num=document.createElement('div');
+        num.className='date';
+        num.textContent=String(d.getDate());
+        cell.appendChild(num);
+
+        const events=document.createElement('div');
+        events.className='events';
+        cell.appendChild(events);
+
+        grid.appendChild(cell);
+      }
+    }
+
+    document.getElementById('prev').onclick=()=>{ state.view = new Date(state.view.getFullYear(), state.view.getMonth()-1, 1); render(); };
+    document.getElementById('next').onclick=()=>{ state.view = new Date(state.view.getFullYear(), state.view.getMonth()+1, 1); render(); };
+    document.getElementById('today').onclick=()=>{ const t=new Date(); state.view=new Date(t.getFullYear(), t.getMonth(), 1); render(); };
+
+    // Resize-aware font scaling for iframes (optional)
+    const ro = new ResizeObserver(entries=>{
+      for(const e of entries){
+        const w = e.contentRect.width;
+        document.documentElement.style.setProperty('--base', `${Math.max(12, Math.min(16, w/40))}px`);
+      }
+    });
+    ro.observe(document.documentElement);
+
+    render();
+  </script>
+</body>
+</html>
